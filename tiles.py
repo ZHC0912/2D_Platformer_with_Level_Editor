@@ -4,9 +4,19 @@ from settings import *
 
 # ── Tile texture manager ──────────────────────────────────────────────────────
 
+# Tileset source — 128×96 px, 16×16 tiles (8 cols × 6 rows)
+_TILESET_PATH = os.path.join("assets", "Platform tiles", "Tileset(16x16)", "Tileset.png")
+
+# (row, col) positions inside that tileset:
+_ROW_GRASS_TOP  = 0;  _COL_GRASS_TOP  = 0   # bright green surface tile
+_ROW_DIRT_FILL  = 1;  _COL_DIRT_FILL  = 0   # dark teal fill (ground interior)
+# Platform is composited from the three light-colour tile types in the upper rows:
+_PLAT_LIGHT = [(0, 0), (1, 1), (2, 1)]   # bright-green top, medium-green ×2
+
+
 class TileTextureManager:
     """
-    Loads dungeon tile textures from assets/tiles/.
+    Loads platform tile textures from the new 16×16 tileset.
     Singleton — call TileTextureManager.get() everywhere.
     Lazy-initialised on first use so pygame must be ready first.
     """
@@ -20,21 +30,21 @@ class TileTextureManager:
         return cls._inst
 
     def __init__(self):
-        self._static: dict  = {}   # tile_type  → Surface (TILE_SIZE × TILE_SIZE)
-        self._anim:   dict  = {}   # name_str   → [Surface, ...]
+        self._grass_top = None   # T_GROUND, exposed surface
+        self._dirt_fill = None   # T_GROUND, buried interior
+        self._platform  = None   # T_PLATFORM (composite of 3 light tiles)
+        self._anim: dict = {}    # name → [Surface, ...]
         self._ts = None
 
     def _load(self):
-        ts_path = os.path.join("assets", "tiles", "Dungeon_Tileset.png")
-        if os.path.exists(ts_path):
-            self._ts = pygame.image.load(ts_path).convert_alpha()
+        if os.path.exists(_TILESET_PATH):
+            self._ts = pygame.image.load(_TILESET_PATH).convert_alpha()
 
-        # Static tile textures — (row, col) in the 16×16 tileset grid
-        # Tune these constants if the visual tile doesn't look right.
-        self._static[T_GROUND]   = self._tile(4, 0)
-        self._static[T_PLATFORM] = self._tile(6, 4)
+        self._grass_top = self._tile(_ROW_GRASS_TOP, _COL_GRASS_TOP)
+        self._dirt_fill = self._tile(_ROW_DIRT_FILL, _COL_DIRT_FILL)
+        self._platform  = self._make_platform_tex()
 
-        # Animated tiles (individual PNG frames)
+        # Animated tiles (coin, spike) — individual PNG frame folders
         for key, folder in [("coin", "coin"), ("spike", "spikes")]:
             d = os.path.join("assets", "tiles", folder)
             if os.path.isdir(d):
@@ -47,16 +57,39 @@ class TileTextureManager:
                     self._anim[key] = frames
 
     def _tile(self, row, col):
-        """Extract one 16×16 tile from the tileset and scale to TILE_SIZE."""
+        """Extract one 16×16 cell and scale to TILE_SIZE × TILE_SIZE."""
         if self._ts is None:
             return None
-        src = pygame.Rect(col * 16, row * 16, 16, 16)
+        src  = pygame.Rect(col * 16, row * 16, 16, 16)
         surf = pygame.Surface((16, 16), pygame.SRCALPHA)
         surf.blit(self._ts, (0, 0), src)
         return pygame.transform.scale(surf, (TILE_SIZE, TILE_SIZE))
 
-    def static(self, tile_type):
-        return self._static.get(tile_type)
+    def _make_platform_tex(self):
+        """
+        Stack the three upper light-colour tile types into one platform surface.
+        Each tile type contributes one-third of the tile height, producing a
+        grass-ledge look that is clearly visible and distinct from solid ground.
+        """
+        srcs = [self._tile(r, c) for r, c in _PLAT_LIGHT]
+        if not srcs[0]:
+            return None
+        surf   = pygame.Surface((TILE_SIZE, TILE_SIZE), pygame.SRCALPHA)
+        h3     = TILE_SIZE // 3
+        slices = [h3, h3, TILE_SIZE - 2 * h3]   # top, mid, bottom (accounts for rounding)
+        y = 0
+        for src, sh in zip(srcs, slices):
+            tile = src or srcs[0]   # fall back to bright-green if a variant is missing
+            surf.blit(tile, (0, y), pygame.Rect(0, 0, TILE_SIZE, sh))
+            y += sh
+        return surf
+
+    def ground_tex(self, has_tile_above: bool):
+        """Return the grass-top tile if exposed, dirt fill if buried."""
+        return self._dirt_fill if has_tile_above else self._grass_top
+
+    def platform_tex(self):
+        return self._platform
 
     def anim_frame(self, key):
         """Return the current animation frame based on wall-clock time."""
@@ -84,15 +117,17 @@ class Tile(pygame.sprite.Sprite):
         if t == T_EMPTY:
             return
 
-        # ── Try texture atlas first ───────────────────────────────────────────
-        ttm = TileTextureManager.get()
-        tex = ttm.static(t)
-        if tex and t in (T_GROUND, T_PLATFORM):
-            self.image.fill((0, 0, 0, 0))
-            self.image.blit(tex, (0, 0))
-            return
+        # Ground and platform textures are resolved context-sensitively at draw
+        # time in TileMap.draw() — bake primitive fallback here for everything else.
+        if t in (T_GROUND, T_PLATFORM):
+            ttm = TileTextureManager.get()
+            # Use a default (grass top) as the baked image; TileMap.draw() overrides.
+            tex = (ttm.platform_tex() if t == T_PLATFORM else ttm.ground_tex(False))
+            if tex:
+                self.image.fill((0, 0, 0, 0))
+                self.image.blit(tex, (0, 0))
+                return
 
-        # ── Primitive fallback (coin/spike/spawn use it; animated drawn per-frame) ──
         self._draw_primitive()
 
     def _draw_primitive(self):
@@ -192,13 +227,23 @@ class TileMap:
             if not (-TILE_SIZE < r.x < SCREEN_W + TILE_SIZE
                     and -TILE_SIZE < r.y < SCREEN_H + TILE_SIZE):
                 continue
-            # Animated tiles — fetch live frame each draw call
-            if tile.tile_type == T_COIN:
+
+            tt = tile.tile_type
+            if tt == T_COIN:
                 frame = ttm.anim_frame("coin")
                 surface.blit(frame if frame else tile.image, r)
-            elif tile.tile_type == T_SPIKE:
+            elif tt == T_SPIKE:
                 frame = ttm.anim_frame("spike")
                 surface.blit(frame if frame else tile.image, r)
+            elif tt == T_GROUND:
+                # Show grass-top only when the tile above is empty
+                above = (tile.row > 0 and
+                         self.grid[tile.row - 1][tile.col] != T_EMPTY)
+                tex = ttm.ground_tex(above)
+                surface.blit(tex if tex else tile.image, r)
+            elif tt == T_PLATFORM:
+                tex = ttm.platform_tex()
+                surface.blit(tex if tex else tile.image, r)
             else:
                 surface.blit(tile.image, r)
 

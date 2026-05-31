@@ -93,12 +93,34 @@ class AdminPanel:
 
     def _draw_btn(self, rect, text, color, mpos, surface=None):
         surface = surface or self.screen
+        rad = 12
         hov = rect.collidepoint(mpos)
-        c   = tuple(min(255, v + 35) for v in color) if hov else color
-        pygame.draw.rect(surface, c, rect, border_radius=7)
-        pygame.draw.rect(surface, WHITE, rect, 2, border_radius=7)
-        t = self.fnt.render(text, True, WHITE)
-        surface.blit(t, t.get_rect(center=rect.center))
+
+        if not hov:
+            sh_c = tuple(max(0, v - 55) for v in color)
+            pygame.draw.rect(surface, sh_c,
+                             pygame.Rect(rect.x + 3, rect.y + 4, rect.w - 2, rect.h),
+                             border_radius=rad)
+
+        press = 3 if hov else 0
+        face  = rect.move(0, press)
+        c     = tuple(min(255, v + 25) for v in color) if hov else color
+        pygame.draw.rect(surface, c, face, border_radius=rad)
+
+        hi_c = tuple(min(255, v + 75) for v in c)
+        pygame.draw.rect(surface, hi_c,
+                         pygame.Rect(face.x + 6, face.y + 4, face.w - 12, 4),
+                         border_radius=2)
+
+        bc = tuple(min(255, v + 55) for v in c)
+        pygame.draw.rect(surface, bc, face, 2, border_radius=rad)
+
+        t  = self.fnt.render(text, True, WHITE)
+        tc = t.get_rect(center=face.center)
+        ts = self.fnt.render(text, True, (0, 0, 0))
+        ts.set_alpha(80)
+        surface.blit(ts, tc.move(1, 2))
+        surface.blit(t, tc)
 
     def _draw_field(self, rect, value, active, surface=None):
         surface = surface or self.screen

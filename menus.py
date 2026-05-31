@@ -1,6 +1,7 @@
-import pygame, os
+import pygame, os, math
 from settings import *
 from save_manager import load_save, reset_user_save
+from ui_helpers import make_orb as _make_orb
 
 
 def _font(size, bold=False):
@@ -17,11 +18,39 @@ class Button:
         self.hovered = False
 
     def draw(self, surface):
-        c = tuple(min(255, v+30) for v in self.color) if self.hovered else self.color
-        pygame.draw.rect(surface, c, self.rect, border_radius=8)
-        pygame.draw.rect(surface, WHITE, self.rect, 2, border_radius=8)
-        t = self.fnt.render(self.text, True, self.text_color)
-        surface.blit(t, t.get_rect(center=self.rect.center))
+        r   = self.rect
+        rad = 16
+
+        # Drop shadow — only shown when the button is raised (not hovered)
+        if not self.hovered:
+            sh_c = tuple(max(0, v - 55) for v in self.color)
+            pygame.draw.rect(surface, sh_c,
+                             pygame.Rect(r.x + 3, r.y + 5, r.w - 2, r.h),
+                             border_radius=rad)
+
+        # Button face — sinks 4 px when hovered to simulate a press
+        press  = 4 if self.hovered else 0
+        face   = r.move(0, press)
+        c      = tuple(min(255, v + 25) for v in self.color) if self.hovered else self.color
+        pygame.draw.rect(surface, c, face, border_radius=rad)
+
+        # Highlight strip near the top
+        hi_c = tuple(min(255, v + 75) for v in c)
+        pygame.draw.rect(surface, hi_c,
+                         pygame.Rect(face.x + 8, face.y + 5, face.w - 16, 5),
+                         border_radius=2)
+
+        # Border (slightly lighter than the face colour)
+        bc = tuple(min(255, v + 55) for v in c)
+        pygame.draw.rect(surface, bc, face, 2, border_radius=rad)
+
+        # Text with a soft dark shadow for depth
+        t  = self.fnt.render(self.text, True, self.text_color)
+        tc = t.get_rect(center=face.center)
+        ts = self.fnt.render(self.text, True, (0, 0, 0))
+        ts.set_alpha(80)
+        surface.blit(ts, tc.move(1, 2))
+        surface.blit(t, tc)
 
     def check(self, pos):
         self.hovered = self.rect.collidepoint(pos)
@@ -109,6 +138,8 @@ class MainMenu:
 
 
 class LevelSelectMenu:
+    _ORB = 38   # orb diameter in pixels
+
     def __init__(self, screen, save_data=None):
         self.screen    = screen
         self.save_data = save_data
@@ -116,6 +147,14 @@ class LevelSelectMenu:
         self.fnt       = _font(20)
         self.fnt_sm    = _font(15)
         self._bg = self._make_bg()
+
+        s = self._ORB
+        # Locked  → pulsing dark-purple "?" orb
+        self._orb_lock = _make_orb(s, (45, 15, 75),  (150, 60, 210), "?", (210, 170, 255))
+        # Unlocked → teal "★" orb
+        self._orb_open = _make_orb(s, (15, 95,  65),  (60, 210, 140), "★", (190, 255, 215))
+        # Tutorial → gold "★" orb
+        self._orb_tut  = _make_orb(s, (115, 80,  5),  (250, 195,  35), "★", (255, 245, 160))
 
     def _make_bg(self):
         surf = pygame.Surface((SCREEN_W, SCREEN_H))
@@ -168,29 +207,60 @@ class LevelSelectMenu:
 
             clip = pygame.Rect(0, list_top, SCREEN_W, visible_h)
             self.screen.set_clip(clip)
-            pos = pygame.mouse.get_pos()
+            mpos = pygame.mouse.get_pos()
+            s    = self._ORB
+            now  = pygame.time.get_ticks()
+
             for i, (name, key, unlocked) in enumerate(all_levels):
                 ry = list_top + i * row_h - scroll
                 if ry + row_h < list_top or ry > SCREEN_H - 70:
                     continue
-                r = pygame.Rect(SCREEN_W//2 - 220, ry, 440, 44)
-                hov = r.collidepoint(pos) and unlocked
+
+                r      = pygame.Rect(SCREEN_W//2 - 220, ry, 440, 44)
+                hov    = r.collidepoint(mpos) and unlocked
                 is_tut = (key == "custom:tutorial.json")
+
+                # Row background
                 if is_tut and unlocked:
-                    base = (100, 80, 20) if not hov else (140, 110, 30)
+                    base   = (120, 95, 15) if not hov else (155, 120, 25)
                     border = YELLOW
                 elif unlocked:
-                    base = (60, 80, 60) if not hov else (50, 150, 50)
-                    border = WHITE
+                    base   = (35, 70, 55) if not hov else (45, 130, 85)
+                    border = (80, 200, 140)
                 else:
-                    base, border = (40, 40, 40), GRAY
-                pygame.draw.rect(self.screen, base, r, border_radius=6)
-                pygame.draw.rect(self.screen, border, r, 2, border_radius=6)
-                t = self.fnt.render(name, True, YELLOW if is_tut else (WHITE if unlocked else GRAY))
-                self.screen.blit(t, t.get_rect(center=r.center))
+                    base, border = (30, 20, 45), (90, 55, 120)
+                pygame.draw.rect(self.screen, base,   r, border_radius=8)
+                pygame.draw.rect(self.screen, border, r, 2, border_radius=8)
+
+                # Pick orb
                 if not unlocked:
-                    lock = self.fnt_sm.render("[Locked]", True, (150, 80, 80))
-                    self.screen.blit(lock, (r.right - 80, r.centery - 8))
+                    orb = self._orb_lock
+                elif is_tut:
+                    orb = self._orb_tut
+                else:
+                    orb = self._orb_open
+
+                # Pulsing outer glow ring on locked orbs
+                ox = r.x + 4
+                oy = r.y + (r.h - s) // 2
+                if not unlocked:
+                    pulse  = 0.5 + 0.5 * math.sin(now / 550 + i * 1.1)
+                    ga     = int(35 + 55 * pulse)
+                    gr     = int(s // 2 + 4 + 4 * pulse)
+                    gsurf  = pygame.Surface((gr * 2 + 4, gr * 2 + 4), pygame.SRCALPHA)
+                    pygame.draw.circle(gsurf, (150, 60, 210, ga),
+                                       (gr + 2, gr + 2), gr)
+                    self.screen.blit(gsurf, (ox + s // 2 - gr - 2,
+                                             oy + s // 2 - gr - 2))
+
+                self.screen.blit(orb, (ox, oy))
+
+                # Level name (shifted right to leave room for the orb)
+                txt_col = YELLOW if is_tut else (WHITE if unlocked else (160, 110, 200))
+                t = self.fnt.render(name, True, txt_col)
+                text_cx = r.x + s + 12 + (r.w - s - 16) // 2
+                self.screen.blit(t, t.get_rect(center=(text_cx, r.centery)))
+
             self.screen.set_clip(None)
 
             back = pygame.Rect(SCREEN_W//2 - 100, SCREEN_H - 58, 200, 40)

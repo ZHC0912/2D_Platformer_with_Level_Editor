@@ -8,6 +8,57 @@ from save_manager import load_save, write_save, write_user_save
 from menus import PauseMenu
 
 
+# ── Parallax background ───────────────────────────────────────────────────────
+
+class _ParallaxBg:
+    """Three-layer parallax background from the Platform tiles asset pack."""
+
+    _BG_DIR = os.path.join("assets", "Platform tiles", "Background")
+    _SKY_COLOR = (135, 206, 235)   # sky-blue fill shown behind all layers
+
+    # (filename, x_parallax_factor, y_parallax_factor, anchor_bottom)
+    # anchor_bottom=True → image bottom sits at screen bottom (trees stay grounded)
+    # anchor_bottom=False → image scaled to fill full screen height (sky)
+    _LAYER_CFG = [
+        ("Layer_03.png", 0.05, 0.02, False),   # sky + clouds — barely moves
+        ("Layer_02.png", 0.20, 0.05, True),    # mid teal trees
+        ("Layer_01.png", 0.45, 0.10, True),    # dark foreground trees
+    ]
+
+    def __init__(self):
+        self._layers = []
+        for fname, fx, fy, anchor in self._LAYER_CFG:
+            path = os.path.join(self._BG_DIR, fname)
+            if not os.path.exists(path):
+                continue
+            img = pygame.image.load(path).convert_alpha()
+            if not anchor:
+                # Scale sky layer to fill screen height
+                scale = SCREEN_H / img.get_height()
+                new_w = max(1, int(img.get_width() * scale))
+                img   = pygame.transform.scale(img, (new_w, SCREEN_H))
+            self._layers.append((img, fx, fy, anchor))
+
+    def draw(self, surface, cam_x, cam_y):
+        surface.fill(self._SKY_COLOR)
+        for img, fx, fy, anchor in self._layers:
+            iw, ih = img.get_width(), img.get_height()
+            # Parallax offset
+            off_x = int(cam_x * fx)
+            off_y = int(cam_y * fy)
+            # Y position
+            if anchor:
+                y = SCREEN_H - ih - off_y
+            else:
+                y = -off_y
+            # Tile horizontally so the background covers any map width
+            start_x = -(off_x % iw)
+            x = start_x - iw   # one extra tile to the left to hide wrap seam
+            while x < SCREEN_W:
+                surface.blit(img, (x, y))
+                x += iw
+
+
 class Game:
     """Runs one play session (one or more levels)."""
 
@@ -17,6 +68,7 @@ class Game:
         self.username   = username          # None → guest
         self.save_data  = save_data if save_data is not None else load_save()
         self.hud        = HUD()
+        self._bg        = _ParallaxBg()
         self.camera     = Camera()
         self.pause_menu = PauseMenu(screen)
 
@@ -197,10 +249,8 @@ class Game:
             raise _NextLevelSignal()
 
     def _draw(self):
-        # sky gradient background
-        self.screen.fill((30, 40, 80))
-
         cam = self.camera.offset
+        self._bg.draw(self.screen, cam[0], cam[1])
         self.level.draw(self.screen, cam)
         self.player.draw(self.screen, cam)
 

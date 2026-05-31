@@ -1,5 +1,6 @@
 import pygame, math, os
 from settings import *
+from ui_helpers import make_orb, HERO_ORB_CFG
 
 _PACK        = "Tiny RPG Character Asset Pack v1.03 -Free Soldier&Orc"
 _ARROW_32    = os.path.join(_PACK, "Arrow(Projectile)", "Arrow01(32x32).png")
@@ -144,25 +145,33 @@ class EnemyBullet(pygame.sprite.Sprite):
 # ── Weapon Pickup sprite ─────────────────────────────────────────────────────
 
 class WeaponPickup(pygame.sprite.Sprite):
-    COLORS = {W_SWORD: (200, 200, 220), W_BOW: (160, 120, 60), W_STAFF: PURPLE}
+    # Orb size slightly smaller than the tile so the glow ring has breathing room
+    _ORB_SIZE = TILE_SIZE - 4
 
     def __init__(self, weapon_id, x, y):
         super().__init__()
         self.weapon_id = weapon_id
-        sz = TILE_SIZE
+        sz  = TILE_SIZE
+        cfg = HERO_ORB_CFG.get(weapon_id, HERO_ORB_CFG["sword"])
+        orb = make_orb(self._ORB_SIZE, *cfg)
+
+        # Centre the orb inside the tile-sized surface
         self.image = pygame.Surface((sz, sz), pygame.SRCALPHA)
-        c = self.COLORS.get(weapon_id, WHITE)
-        pygame.draw.rect(self.image, c, (6, 6, sz-12, sz-12), border_radius=6)
-        font = pygame.font.SysFont("Arial", 11, bold=True)
-        label = {"sword": "SW", "bow": "BW", "staff": "MG"}.get(weapon_id, "??")
-        txt = font.render(label, True, BLACK)
-        self.image.blit(txt, txt.get_rect(center=(sz//2, sz//2)))
-        self.rect = self.image.get_rect(center=(x, y))
-        self.bob_timer = 0
+        off = (sz - self._ORB_SIZE) // 2
+        self.image.blit(orb, (off, off))
+
+        self.rect       = self.image.get_rect(center=(x, y))
+        self.bob_timer  = 0
+        self._base_img  = self.image.copy()   # used for pulse redraw
 
     def update(self, *_):
         self.bob_timer += 0.08
         self.rect.y += int(math.sin(self.bob_timer) * 0.5)
+
+        # Gentle alpha pulse to draw the player's attention
+        pulse = 0.75 + 0.25 * math.sin(self.bob_timer * 1.8)
+        self.image = self._base_img.copy()
+        self.image.set_alpha(int(255 * pulse))
 
 
 # ── Sword swing hitbox ───────────────────────────────────────────────────────

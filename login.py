@@ -83,12 +83,35 @@ class LoginScreen:
     # ── Button helper ─────────────────────────────────────────────────────────
 
     def _draw_btn(self, rect, text, color, hover_pos):
+        rad = 14
         hov = rect.collidepoint(hover_pos)
-        c   = tuple(min(255, v + 30) for v in color) if hov else color
-        pygame.draw.rect(self.screen, c, rect, border_radius=8)
-        pygame.draw.rect(self.screen, WHITE, rect, 2, border_radius=8)
-        t = _font(18, bold=True).render(text, True, WHITE)
-        self.screen.blit(t, t.get_rect(center=rect.center))
+
+        if not hov:
+            sh_c = tuple(max(0, v - 55) for v in color)
+            pygame.draw.rect(self.screen, sh_c,
+                             pygame.Rect(rect.x + 3, rect.y + 5, rect.w - 2, rect.h),
+                             border_radius=rad)
+
+        press = 4 if hov else 0
+        face  = rect.move(0, press)
+        c     = tuple(min(255, v + 25) for v in color) if hov else color
+        pygame.draw.rect(self.screen, c, face, border_radius=rad)
+
+        hi_c = tuple(min(255, v + 75) for v in c)
+        pygame.draw.rect(self.screen, hi_c,
+                         pygame.Rect(face.x + 8, face.y + 4, face.w - 16, 5),
+                         border_radius=2)
+
+        bc = tuple(min(255, v + 55) for v in c)
+        pygame.draw.rect(self.screen, bc, face, 2, border_radius=rad)
+
+        fnt = _font(18, bold=True)
+        t   = fnt.render(text, True, WHITE)
+        tc  = t.get_rect(center=face.center)
+        ts  = fnt.render(text, True, (0, 0, 0))
+        ts.set_alpha(80)
+        self.screen.blit(ts, tc.move(1, 2))
+        self.screen.blit(t, tc)
 
     # ── Auth helpers ──────────────────────────────────────────────────────────
 
