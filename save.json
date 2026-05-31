@@ -1,0 +1,11 @@
+{
+  "level_reached": 7,
+  "coins_total": 101,
+  "unlocked_weapons": [
+    "sword",
+    "bow",
+    "staff"
+  ],
+  "double_jump": true,
+  "custom_levels_beaten": []
+}
