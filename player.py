@@ -353,6 +353,15 @@ class Player(pygame.sprite.Sprite):
                 elif self.vel_x < 0: self.rect.left = t.rect.right
                 self.vel_x = 0
 
+        # Hard map boundaries — player cannot walk off either horizontal edge
+        map_pixel_w = tilemap.cols * TILE_SIZE
+        if self.rect.left < 0:
+            self.rect.left = 0
+            self.vel_x = 0
+        elif self.rect.right > map_pixel_w:
+            self.rect.right = map_pixel_w
+            self.vel_x = 0
+
         prev_bottom = self.rect.bottom
         self.rect.y += int(self.vel_y)
         self.on_ground = False;  self.on_platform = False
