@@ -2,7 +2,17 @@ import sys, os, json, tempfile
 os.environ.setdefault("SDL_VIDEODRIVER", "")
 
 import pygame
-from settings import SCREEN_W, SCREEN_H, FPS, TITLE, LEVELS_DIR
+from settings import SCREEN_W, SCREEN_H, FPS, TITLE, LEVELS_DIR, W_SWORD, W_BOW, W_STAFF
+
+# All skills + weapons unlocked for editor play-testing.
+# Never persisted to disk (username=None is passed for play-test runs).
+_EDITOR_SAVE = {
+    "level_reached": 99,
+    "coins_total": 0,
+    "unlocked_weapons": [W_SWORD, W_BOW, W_STAFF],
+    "double_jump": True,
+    "custom_levels_beaten": [],
+}
 
 
 def main():
@@ -74,7 +84,10 @@ def _run_session(screen, username, save_data):
             editor_level = ed.get_level()
 
             if result == "play":
-                # play-test the editor level in a throw-away session
+                # play-test the editor level in a throw-away session.
+                # Always use _EDITOR_SAVE so all weapons and double jump are
+                # available regardless of the user's actual progress.
+                # username=None prevents any disk write.
                 with tempfile.NamedTemporaryFile(
                         mode="w", suffix=".json",
                         delete=False, dir=LEVELS_DIR) as f:
@@ -83,9 +96,8 @@ def _run_session(screen, username, save_data):
                 fname = os.path.basename(tmp_path)
                 from game import Game
                 g  = Game(screen, level_key=f"custom:{fname}",
-                          username=username, save_data=save_data)
+                          username=None, save_data=dict(_EDITOR_SAVE))
                 g.run()
-                save_data = g.save_data
                 try:
                     os.remove(tmp_path)
                 except OSError:

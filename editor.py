@@ -2,8 +2,9 @@ import pygame, os, json
 from settings import *
 from tiles import TileMap, Tile
 from level import Level
-from enemies import make_enemy
+from enemies import make_enemy, ENEMY_CONFIG
 from weapons import WeaponPickup
+from ui_helpers import HERO_ORB_CFG
 
 
 PANEL_W = 220
@@ -15,8 +16,29 @@ MODE_ENEMY    = "enemy"
 MODE_PICKUP   = "pickup"
 MODE_SPAWN    = "spawn"
 MODE_ERASE    = "erase"
+MODE_SETTINGS = "settings"
 
-ENEMY_COLORS = {E_BASIC: (180,60,60), E_SHOOTER: (180,100,30), E_DASH: (100,30,180)}
+# (forced_character value, display label, swatch colour)
+CHAR_OPTIONS = [
+    (None,    "Any character",  (140, 140, 140)),
+    (W_SWORD, "Knight (Sword)", (180, 180, 200)),
+    (W_BOW,   "Archer (Bow)",   (100, 200, 80)),
+    (W_STAFF, "Wizard (Staff)", (180, 100, 240)),
+]
+
+# Categorised enemy roster for the editor panel
+ENEMY_CATEGORIES = [
+    ("Melee",  ["orc", "elite_orc", "goblin", "skeleton", "werebear"]),
+    ("Ranged", ["skeleton_archer", "flying_eye"]),
+    ("Dash",   ["orc_rider", "mushroom"]),
+]
+
+def _etype_color(etype):
+    tint = ENEMY_CONFIG.get(etype, {}).get("tint")
+    return tint[:3] if tint else (160, 70, 40)
+
+def _etype_label(etype):
+    return ENEMY_CONFIG.get(etype, {}).get("label", etype.replace("_", " ").title())
 
 def _font(size, bold=False):
     return pygame.font.SysFont("Arial", size, bold=bold)
@@ -33,7 +55,7 @@ class LevelEditor:
         # Tool state
         self.mode          = MODE_TILE
         self.selected_tile = T_GROUND
-        self.selected_enemy = E_BASIC
+        self.selected_enemy = "orc"
         self.selected_pickup = W_SWORD
         self.enemy_param   = 120   # patrol_range or detect_radius
         self.placing_enemy = False
@@ -58,6 +80,25 @@ class LevelEditor:
         self._file_list = []
         self._show_load = False
         self._load_scroll = 0
+
+        # parallax background layers (same asset pack as the game)
+        self._bg_layers = self._load_bg_layers()
+
+    # ── Background ────────────────────────────────────────────────────────────
+
+    def _load_bg_layers(self):
+        bg_dir = os.path.join("assets", "Platform tiles", "Background")
+        layers = []
+        for fname, pf in [("Layer_03.png", 0.05), ("Layer_02.png", 0.20), ("Layer_01.png", 0.45)]:
+            path = os.path.join(bg_dir, fname)
+            if not os.path.exists(path):
+                continue
+            img = pygame.image.load(path).convert_alpha()
+            iw, ih = img.get_size()
+            scale = SCREEN_H / ih
+            img = pygame.transform.scale(img, (int(iw * scale), SCREEN_H))
+            layers.append((img, pf))
+        return layers
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -221,14 +262,17 @@ class LevelEditor:
         if button != 1:
             return None
 
+        # Mirror _draw_panel's y progression exactly so click rects match visuals.
         y = 10
-        # Mode buttons
+        y += 28  # "LEVEL EDITOR" title
+
         modes = [
-            (MODE_TILE,   "Tiles"),
-            (MODE_ENEMY,  "Enemies"),
-            (MODE_PICKUP, "Pickups"),
-            (MODE_SPAWN,  "Set Spawn"),
-            (MODE_ERASE,  "Erase"),
+            (MODE_TILE,     "Tiles"),
+            (MODE_ENEMY,    "Enemies"),
+            (MODE_PICKUP,   "Pickups"),
+            (MODE_SPAWN,    "Set Spawn"),
+            (MODE_ERASE,    "Erase"),
+            (MODE_SETTINGS, "Settings"),
         ]
         for mode, label in modes:
             r = pygame.Rect(5, y, PANEL_W-10, 28)
@@ -237,33 +281,47 @@ class LevelEditor:
                 return None
             y += 32
 
-        y += 4
+        y += 8   # pre-separator gap
+        y += 8   # post-separator gap
+
         if self.mode == MODE_TILE:
+            y += 18  # "Tile type:" label
             tiles = [(T_GROUND,"Ground"),(T_PLATFORM,"Platform"),
-                     (T_SPIKE,"Spike"),(T_COIN,"Coin")]
+                     (T_SPIKE,"Spike"),(T_COIN,"Coin"),(T_TORCH,"Torch")]
             for tid, tname in tiles:
                 r = pygame.Rect(5, y, PANEL_W-10, 24)
                 if r.collidepoint(px, py):
                     self.selected_tile = tid
-                y += 28
+                y += 24
         elif self.mode == MODE_ENEMY:
-            for etype in [E_BASIC, E_SHOOTER, E_DASH]:
-                r = pygame.Rect(5, y, PANEL_W-10, 24)
-                if r.collidepoint(px, py):
-                    self.selected_enemy = etype
-                y += 28
-            # param field
-            param_r = pygame.Rect(5, y+24, PANEL_W-10, 24)
+            for cat_label, etypes in ENEMY_CATEGORIES:
+                y += 18   # category header height
+                for etype in etypes:
+                    r = pygame.Rect(5, y, PANEL_W-10, 20)
+                    if r.collidepoint(px, py):
+                        self.selected_enemy = etype
+                    y += 20
+            y += 4   # gap before param label
+            y += 16  # "Patrol/Detect radius:" label
+            param_r = pygame.Rect(5, y, PANEL_W-10, 24)
             if param_r.collidepoint(px, py):
                 self._input_active = True
                 self._input_field = "param"
                 self._input_text  = str(self.enemy_param)
         elif self.mode == MODE_PICKUP:
+            y += 18  # "Weapon pickup:" label
             for wid in [W_SWORD, W_BOW, W_STAFF]:
                 r = pygame.Rect(5, y, PANEL_W-10, 24)
                 if r.collidepoint(px, py):
                     self.selected_pickup = wid
-                y += 28
+                y += 24
+        elif self.mode == MODE_SETTINGS:
+            y += 20  # "Character lock:" label
+            for char_id, char_label, char_color in CHAR_OPTIONS:
+                r = pygame.Rect(5, y, PANEL_W-10, 20)
+                if r.collidepoint(px, py):
+                    self.level.forced_character = char_id
+                y += 24
 
         # Bottom buttons (save/load/play)
         btn_y = SCREEN_H - 180
@@ -352,7 +410,15 @@ class LevelEditor:
 
     def _draw_canvas(self):
         surf = self.screen.subsurface((0, 0, self.view_w, self.view_h))
-        surf.fill((30, 35, 50))
+        surf.fill((30, 35, 50))  # sky fallback if no layers loaded
+
+        for img, pf in self._bg_layers:
+            iw = img.get_width()
+            off = int(self.cam_x * pf) % iw
+            x = -(off % iw)
+            while x < self.view_w:
+                surf.blit(img, (x, 0))
+                x += iw
 
         # grid
         start_c = int(self.cam_x // TILE_SIZE)
@@ -403,11 +469,12 @@ class LevelEditor:
         y += 28
 
         modes = [
-            (MODE_TILE,   "Tiles"),
-            (MODE_ENEMY,  "Enemies"),
-            (MODE_PICKUP, "Pickups"),
-            (MODE_SPAWN,  "Set Spawn"),
-            (MODE_ERASE,  "Erase"),
+            (MODE_TILE,     "Tiles"),
+            (MODE_ENEMY,    "Enemies"),
+            (MODE_PICKUP,   "Pickups"),
+            (MODE_SPAWN,    "Set Spawn"),
+            (MODE_ERASE,    "Erase"),
+            (MODE_SETTINGS, "Settings"),
         ]
         for mode, label in modes:
             sel = (self.mode == mode)
@@ -427,7 +494,7 @@ class LevelEditor:
             panel.blit(self.fnt_sm.render("Tile type:", True, LTGRAY), (5, y))
             y += 18
             tiles = [(T_GROUND,"Ground"),(T_PLATFORM,"Platform"),
-                     (T_SPIKE,"Spike"),(T_COIN,"Coin")]
+                     (T_SPIKE,"Spike"),(T_COIN,"Coin"),(T_TORCH,"Torch")]
             for tid, tname in tiles:
                 sel = (self.selected_tile == tid)
                 c = TILE_COLORS.get(tid, GRAY)
@@ -439,18 +506,19 @@ class LevelEditor:
                 y += 24
 
         elif self.mode == MODE_ENEMY:
-            panel.blit(self.fnt_sm.render("Enemy type:", True, LTGRAY), (5, y))
-            y += 18
-            for etype in [E_BASIC, E_SHOOTER, E_DASH]:
-                sel = (self.selected_enemy == etype)
-                ec  = ENEMY_COLORS[etype]
-                pygame.draw.rect(panel, ec, (5, y, 18, 18))
-                if sel:
-                    pygame.draw.rect(panel, WHITE, (5, y, 18, 18), 2)
-                label = etype.capitalize()
-                t = self.fnt_sm.render(label, True, WHITE if sel else LTGRAY)
-                panel.blit(t, (28, y+2))
-                y += 24
+            for cat_label, etypes in ENEMY_CATEGORIES:
+                cat_surf = self.fnt_sm.render(f"── {cat_label} ──", True, CYAN)
+                panel.blit(cat_surf, (5, y))
+                y += 18
+                for etype in etypes:
+                    sel = (self.selected_enemy == etype)
+                    ec  = _etype_color(etype)
+                    pygame.draw.rect(panel, ec, (5, y, 12, 12))
+                    if sel:
+                        pygame.draw.rect(panel, WHITE, (5, y, 12, 12), 2)
+                    t = self.fnt_sm.render(_etype_label(etype), True, WHITE if sel else LTGRAY)
+                    panel.blit(t, (22, y))
+                    y += 20
             y += 4
             panel.blit(self.fnt_sm.render("Patrol/Detect radius:", True, LTGRAY), (5, y))
             y += 16
@@ -461,12 +529,24 @@ class LevelEditor:
             t = self.fnt.render(inp_text, True, WHITE)
             panel.blit(t, (10, y+4))
 
+        elif self.mode == MODE_SETTINGS:
+            panel.blit(self.fnt_sm.render("Character lock:", True, LTGRAY), (5, y))
+            y += 20
+            for char_id, char_label, char_color in CHAR_OPTIONS:
+                sel = (self.level.forced_character == char_id)
+                pygame.draw.rect(panel, char_color, (5, y, 14, 14))
+                if sel:
+                    pygame.draw.rect(panel, WHITE, (5, y, 14, 14), 2)
+                t = self.fnt_sm.render(char_label, True, WHITE if sel else LTGRAY)
+                panel.blit(t, (24, y))
+                y += 24
+
         elif self.mode == MODE_PICKUP:
             panel.blit(self.fnt_sm.render("Weapon pickup:", True, LTGRAY), (5, y))
             y += 18
             for wid in [W_SWORD, W_BOW, W_STAFF]:
                 sel = (self.selected_pickup == wid)
-                wc  = WeaponPickup.COLORS.get(wid, WHITE)
+                wc  = HERO_ORB_CFG.get(wid, (HERO_ORB_CFG["sword"],))[1]
                 pygame.draw.rect(panel, wc, (5, y, 18, 18))
                 if sel:
                     pygame.draw.rect(panel, WHITE, (5, y, 18, 18), 2)

@@ -1,6 +1,6 @@
 import pygame, os, math
 from settings import *
-from save_manager import load_save, reset_user_save
+from save_manager import load_save, reset_user_save, DEFAULT_SAVE
 from ui_helpers import make_orb as _make_orb
 
 
@@ -125,7 +125,7 @@ class MainMenu:
                 btn.draw(self.screen)
 
             # Progress bar at bottom
-            save = self.save_data if self.save_data is not None else load_save()
+            save = self.save_data if self.save_data is not None else dict(DEFAULT_SAVE)
             info = self.fnt_sub.render(
                 f"Progress: Level {save['level_reached']}  |  "
                 f"Coins: {save['coins_total']}  |  "

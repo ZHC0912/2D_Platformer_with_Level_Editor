@@ -20,6 +20,7 @@ class Level:
         self.enemy_data = []          # raw dicts for editor round-trip
         self.pickup_data = []
         self.triggers = []            # [{"x": int, "message": str, "fired": bool}]
+        self.forced_character = None  # None = any; "sword"/"bow"/"staff" = lock to one
 
     # ── Serialisation ────────────────────────────────────────────────────────
 
@@ -35,6 +36,7 @@ class Level:
             "unlock_requirement": self.unlock_requirement,
             "triggers": [{"x": t["x"], "message": t["message"]}
                          for t in self.triggers],
+            "forced_character": self.forced_character,
         }
 
     @classmethod
@@ -50,6 +52,7 @@ class Level:
         lv.pickup_data = data.get("pickups", [])
         lv.triggers    = [{"x": t["x"], "message": t["message"], "fired": False}
                           for t in data.get("triggers", [])]
+        lv.forced_character = data.get("forced_character", None)
         lv._spawn_enemies()
         lv._spawn_pickups()
         return lv

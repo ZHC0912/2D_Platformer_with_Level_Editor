@@ -44,13 +44,18 @@ class TileTextureManager:
         self._dirt_fill = self._tile(_ROW_DIRT_FILL, _COL_DIRT_FILL)
         self._platform  = self._make_platform_tex()
 
-        # Animated tiles (coin, spike) — individual PNG frame folders
-        for key, folder in [("coin", "coin"), ("spike", "spikes")]:
+        # Animated tiles — individual PNG frame folders; prefix filters filenames
+        for key, folder, prefix in [
+            ("coin",  "coin",   None),
+            ("spike", "spikes", None),
+            ("torch", "torch",  "torch_"),  # only torch_*.png, not candlestick variants
+        ]:
             d = os.path.join("assets", "tiles", folder)
             if os.path.isdir(d):
                 frames = []
                 for f in sorted(os.listdir(d)):
-                    if f.lower().endswith(".png"):
+                    if f.lower().endswith(".png") and (
+                            prefix is None or f.lower().startswith(prefix)):
                         img = pygame.image.load(os.path.join(d, f)).convert_alpha()
                         frames.append(pygame.transform.scale(img, (TILE_SIZE, TILE_SIZE)))
                 if frames:
@@ -159,6 +164,11 @@ class Tile(pygame.sprite.Sprite):
             pygame.draw.rect(self.image, CYAN, (8, 8, TILE_SIZE-16, TILE_SIZE-16), 3)
             pygame.draw.line(self.image, CYAN, (TILE_SIZE//2, 0), (TILE_SIZE//2, TILE_SIZE), 2)
             pygame.draw.line(self.image, CYAN, (0, TILE_SIZE//2), (TILE_SIZE, TILE_SIZE//2), 2)
+        elif t == T_TORCH:
+            cx = TILE_SIZE // 2
+            pygame.draw.rect(self.image, (160, 100, 30), (cx-4, TILE_SIZE//2, 8, TILE_SIZE//2-2))
+            pygame.draw.ellipse(self.image, ORANGE, (cx-6, 4, 12, 22))
+            pygame.draw.ellipse(self.image, YELLOW, (cx-3, 7, 7, 14))
 
     def is_solid(self):
         return self.tile_type in (T_GROUND, T_PLATFORM)
@@ -244,6 +254,9 @@ class TileMap:
             elif tt == T_PLATFORM:
                 tex = ttm.platform_tex()
                 surface.blit(tex if tex else tile.image, r)
+            elif tt == T_TORCH:
+                frame = ttm.anim_frame("torch")
+                surface.blit(frame if frame else tile.image, r)
             else:
                 surface.blit(tile.image, r)
 

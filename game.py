@@ -4,7 +4,7 @@ from player import Player
 from level import Level, load_builtin_level
 from camera import Camera
 from hud import HUD
-from save_manager import load_save, write_save, write_user_save
+from save_manager import load_save, write_save, write_user_save, DEFAULT_SAVE
 from menus import PauseMenu
 
 
@@ -66,7 +66,7 @@ class Game:
         self.screen     = screen
         self.clock      = pygame.time.Clock()
         self.username   = username          # None → guest
-        self.save_data  = save_data if save_data is not None else load_save()
+        self.save_data  = save_data if save_data is not None else dict(DEFAULT_SAVE)
         self.hud        = HUD()
         self._bg        = _ParallaxBg()
         self.camera     = Camera()
@@ -112,6 +112,17 @@ class Game:
             self._level_number = self._current_idx + 1
 
         self.player = Player(self.level.spawn_x, self.level.spawn_y, self.save_data)
+
+        # Enforce character lock set by the level designer
+        fc = self.level.forced_character
+        if fc:
+            if fc not in self.player._animators:
+                anim = self.player._load_char_anim(fc)
+                if anim:
+                    self.player._animators[fc] = anim
+            self.player.unlocked_weapons = [fc]
+            self.player.select_weapon(0)
+
         self.camera.x = max(0, self.level.spawn_x - SCREEN_W // 2)
         self.camera.y = max(0, self.level.spawn_y - SCREEN_H // 2)
         self._level_complete = False

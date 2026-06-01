@@ -41,6 +41,7 @@ T_PLATFORM = 2
 T_SPIKE    = 3
 T_COIN     = 4
 T_SPAWN    = 5
+T_TORCH    = 6
 
 TILE_NAMES = {
     T_EMPTY:    "Empty",
@@ -49,6 +50,7 @@ TILE_NAMES = {
     T_SPIKE:    "Spike",
     T_COIN:     "Coin",
     T_SPAWN:    "Spawn",
+    T_TORCH:    "Torch",
 }
 
 TILE_COLORS = {
@@ -58,6 +60,7 @@ TILE_COLORS = {
     T_SPIKE:    RED,
     T_COIN:     YELLOW,
     T_SPAWN:    CYAN,
+    T_TORCH:    ORANGE,
 }
 
 # Enemy type IDs
