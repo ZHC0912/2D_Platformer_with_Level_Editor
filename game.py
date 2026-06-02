@@ -11,49 +11,58 @@ from menus import PauseMenu
 # ── Parallax background ───────────────────────────────────────────────────────
 
 class _ParallaxBg:
-    """Three-layer parallax background from the Platform tiles asset pack."""
+    """Parallax background supporting 'forest' and 'dungeon' sets."""
 
-    _BG_DIR = os.path.join("assets", "Platform tiles", "Background")
-    _SKY_COLOR = (135, 206, 235)   # sky-blue fill shown behind all layers
+    _SKY_COLORS = {
+        "forest":  (135, 206, 235),
+        "dungeon": (18,  14,  30),
+    }
 
-    # (filename, x_parallax_factor, y_parallax_factor, anchor_bottom)
-    # anchor_bottom=True → image bottom sits at screen bottom (trees stay grounded)
-    # anchor_bottom=False → image scaled to fill full screen height (sky)
-    _LAYER_CFG = [
-        ("Layer_03.png", 0.05, 0.02, False),   # sky + clouds — barely moves
-        ("Layer_02.png", 0.20, 0.05, True),    # mid teal trees
-        ("Layer_01.png", 0.45, 0.10, True),    # dark foreground trees
+    # (filename, x_factor, y_factor, anchor_bottom)
+    _FOREST_CFG = [
+        ("Layer_03.png", 0.05, 0.02, False),
+        ("Layer_02.png", 0.20, 0.05, True),
+        ("Layer_01.png", 0.45, 0.10, True),
+    ]
+    # dungeon: bg_0 far, bg_1 mid, bg_2 near, fg_0/fg_1 foreground
+    _DUNGEON_CFG = [
+        ("bg_0.png", 0.02, 0.01, False),
+        ("bg_1.png", 0.15, 0.04, False),
+        ("bg_2.png", 0.35, 0.08, False),
+        ("fg_0.png", 0.60, 0.12, True),
+        ("fg_1.png", 0.80, 0.18, True),
     ]
 
-    def __init__(self):
+    def __init__(self, bg_set="forest"):
+        self._bg_set = bg_set
+        self._sky    = self._SKY_COLORS.get(bg_set, self._SKY_COLORS["forest"])
         self._layers = []
-        for fname, fx, fy, anchor in self._LAYER_CFG:
-            path = os.path.join(self._BG_DIR, fname)
+
+        if bg_set == "dungeon":
+            bg_dir = os.path.join("assets", "Platform tiles", "Background_dungeon")
+            cfg    = self._DUNGEON_CFG
+        else:
+            bg_dir = os.path.join("assets", "Platform tiles", "Background")
+            cfg    = self._FOREST_CFG
+
+        for fname, fx, fy, anchor in cfg:
+            path = os.path.join(bg_dir, fname)
             if not os.path.exists(path):
                 continue
             img = pygame.image.load(path).convert_alpha()
-            if not anchor:
-                # Scale sky layer to fill screen height
-                scale = SCREEN_H / img.get_height()
-                new_w = max(1, int(img.get_width() * scale))
-                img   = pygame.transform.scale(img, (new_w, SCREEN_H))
+            scale = SCREEN_H / img.get_height()
+            new_w = max(1, int(img.get_width() * scale))
+            img   = pygame.transform.scale(img, (new_w, SCREEN_H))
             self._layers.append((img, fx, fy, anchor))
 
     def draw(self, surface, cam_x, cam_y):
-        surface.fill(self._SKY_COLOR)
+        surface.fill(self._sky)
         for img, fx, fy, anchor in self._layers:
             iw, ih = img.get_width(), img.get_height()
-            # Parallax offset
-            off_x = int(cam_x * fx)
-            off_y = int(cam_y * fy)
-            # Y position
-            if anchor:
-                y = SCREEN_H - ih - off_y
-            else:
-                y = -off_y
-            # Tile horizontally so the background covers any map width
-            start_x = -(off_x % iw)
-            x = start_x - iw   # one extra tile to the left to hide wrap seam
+            off_x  = int(cam_x * fx)
+            off_y  = int(cam_y * fy)
+            y      = (SCREEN_H - ih - off_y) if anchor else -off_y
+            x      = -(off_x % iw) - iw
             while x < SCREEN_W:
                 surface.blit(img, (x, y))
                 x += iw
@@ -68,7 +77,7 @@ class Game:
         self.username   = username          # None → guest
         self.save_data  = save_data if save_data is not None else dict(DEFAULT_SAVE)
         self.hud        = HUD()
-        self._bg        = _ParallaxBg()
+        self._bg        = None   # created per-level in _load_current_level
         self.camera     = Camera()
         self.pause_menu = PauseMenu(screen)
 
@@ -123,6 +132,7 @@ class Game:
             self.player.unlocked_weapons = [fc]
             self.player.select_weapon(0)
 
+        self._bg = _ParallaxBg(getattr(self.level, "bg_set", "forest"))
         self.camera.x = max(0, self.level.spawn_x - SCREEN_W // 2)
         self.camera.y = max(0, self.level.spawn_y - SCREEN_H // 2)
         self._level_complete = False
@@ -192,7 +202,19 @@ class Game:
                     self._show_victory()
                     return "menu"
             if result == "restart":
-                self._load_current_level()
+                if self._checkpoint_pos:
+                    self._soft_respawn()
+                else:
+                    self._load_current_level()
+
+    def _soft_respawn(self):
+        """Respawn player at the last checkpoint without reloading the level."""
+        cx, cy = self._checkpoint_pos
+        self.player = Player(cx, cy, self.save_data)
+        self._dead = False
+        self._respawn_timer = 0
+        self._level_complete = False
+        self._complete_timer = 0
 
     def _game_loop(self):
         while True:
@@ -348,6 +370,12 @@ def _tick_checks(self):
             self.hud.show_message(trig["message"], 220)
             trig["fired"] = True
 
+    # Checkpoint activation
+    if self.level._checkpoint_event:
+        self._checkpoint_pos = self.level._checkpoint_event
+        self.hud.show_message("Checkpoint!", 120)
+        self.level._checkpoint_event = None
+
     if p.rect.top > self.level.tilemap.rows * TILE_SIZE:
         p.hp = 0
     if p.hp <= 0 and not self._dead:
@@ -355,12 +383,17 @@ def _tick_checks(self):
         self._respawn_timer = 90
         return None
 
-    map_right = self.level.tilemap.cols * TILE_SIZE - TILE_SIZE
-    if p.rect.right >= map_right and not self._level_complete:
-        self._level_complete = True
-        self._check_unlocks()
-        self.hud.show_message("Level Complete!")
-        self._complete_timer = 120
+    # Level complete: win door (primary) or right-edge fallback
+    if not self._level_complete:
+        wd = self.level.win_door
+        map_right = self.level.tilemap.cols * TILE_SIZE - TILE_SIZE
+        if (wd and p.rect.colliderect(wd.rect)) or (not wd and p.rect.right >= map_right):
+            self._level_complete = True
+            self._check_unlocks()
+            self.hud.show_message("Level Complete!")
+            self._complete_timer = 120
+            if wd:
+                wd.trigger_open()
 
     if self._level_complete:
         self._complete_timer -= 1
@@ -377,4 +410,5 @@ _orig_load = Game._load_current_level
 def _load_patch(self):
     _orig_load(self)
     self._complete_timer = 0
+    self._checkpoint_pos = None
 Game._load_current_level = _load_patch

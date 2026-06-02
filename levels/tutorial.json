@@ -1250,7 +1250,7 @@
   ],
   "enemies": [
     {
-      "type": "basic",
+      "type": "goblin",
       "x": 2000,
       "y": 720,
       "patrol_range": 100,
@@ -1294,5 +1294,17 @@
       "x": 2080,
       "message": "Almost there!  Reach the RIGHT EDGE to finish!"
     }
-  ]
+  ],
+  "forced_character": null,
+  "checkpoints": [
+    {
+      "x": 1500,
+      "y": 720
+    }
+  ],
+  "win_door": {
+    "x": 2300,
+    "y": 720
+  },
+  "bg_set": "forest"
 }

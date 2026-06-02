@@ -1250,42 +1250,42 @@
   ],
   "enemies": [
     {
-      "type": "elite_orc",
+      "type": "bomber_goblin",
       "x": 160,
       "y": 720,
       "patrol_range": 100,
       "detect_radius": 100
     },
     {
-      "type": "skeleton_archer",
+      "type": "flying_eye",
       "x": 480,
       "y": 720,
       "patrol_range": 0,
       "detect_radius": 200
     },
     {
-      "type": "orc_rider",
+      "type": "mushroom",
       "x": 880,
       "y": 720,
       "patrol_range": 200,
       "detect_radius": 200
     },
     {
-      "type": "werebear",
+      "type": "slime",
       "x": 1280,
       "y": 720,
       "patrol_range": 80,
       "detect_radius": 80
     },
     {
-      "type": "greatsword_skeleton",
+      "type": "worm",
       "x": 1680,
       "y": 720,
       "patrol_range": 120,
       "detect_radius": 120
     },
     {
-      "type": "greatsword_skeleton_dash",
+      "type": "mushroom",
       "x": 2080,
       "y": 720,
       "patrol_range": 200,
@@ -1294,5 +1294,17 @@
   ],
   "pickups": [],
   "unlock_requirement": 4,
-  "triggers": []
+  "triggers": [],
+  "forced_character": null,
+  "checkpoints": [
+    {
+      "x": 900,
+      "y": 720
+    }
+  ],
+  "win_door": {
+    "x": 2260,
+    "y": 720
+  },
+  "bg_set": "forest"
 }

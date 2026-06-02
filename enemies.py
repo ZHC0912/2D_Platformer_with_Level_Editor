@@ -17,63 +17,47 @@ _ENEMY_SPRITE_BASE = os.path.join("assets", "sprites", "enemies")
 #             + speed / dash_speed where applicable
 ENEMY_CONFIG = {
     # ── Melee (BasicEnemy) ────────────────────────────────────────────────────
-    "orc": dict(
-        hp=40,  damage=15, speed=2.0, display=100,
-        tint=None,
-        label="Orc"),
-    "elite_orc": dict(
-        hp=90,  damage=25, speed=2.5, display=110,
-        tint=(255, 120, 120, 255),          # red-tinted
-        label="Elite Orc"),
-    "skeleton": dict(
-        hp=25,  damage=12, speed=3.0, display=92,
-        tint=(230, 230, 200, 255),          # bone-white
-        label="Skeleton"),
-    "werebear": dict(
-        hp=120, damage=30, speed=1.6, display=118,
-        tint=(180, 120,  80, 255),          # brown
-        label="Werebear"),
-    "greatsword_skeleton": dict(
-        hp=60,  damage=22, speed=1.4, display=105,
-        tint=(160, 190, 220, 255),          # steel-grey
-        label="Greatsword Skeleton"),
-    # ── Ranged (ShooterEnemy) ─────────────────────────────────────────────────
-    "skeleton_archer": dict(
-        hp=25,  damage=12, display=92,
-        tint=(215, 215, 185, 255),          # ivory
-        label="Skeleton Archer"),
-    # ── Dash (DashEnemy) ─────────────────────────────────────────────────────
-    "orc_rider": dict(
-        hp=70,  damage=25, dash_speed=14, display=112,
-        tint=(120, 180, 255, 255),          # sky-blue mount
-        label="Orc Rider"),
-    "greatsword_skeleton_dash": dict(
-        hp=55,  damage=20, dash_speed=10, display=105,
-        tint=(160, 190, 220, 255),          # steel-grey
-        label="Greatsword Skeleton"),
-    # ── New characters from the character pack ────────────────────────────────
+    "goblin": dict(
+        hp=35,  damage=14, speed=3.5, display=80,
+        tint=None, label="Goblin"),
+    "bomber_goblin": dict(
+        hp=45,  damage=18, speed=2.2, display=80,
+        tint=None, label="Bomber Goblin"),
     "skeleton": dict(
         hp=25,  damage=12, speed=3.0, display=92,
         tint=(230, 230, 200, 255), label="Skeleton"),
-    "goblin": dict(
-        hp=35,  damage=14, speed=3.5, display=95,
-        tint=(140, 200, 100, 255), label="Goblin"),
-    "flying_eye": dict(          # ranged — floats, shoots projectiles
-        hp=30,  damage=12,        display=90,
-        tint=(200, 140, 255, 255), label="Flying Eye"),
-    "mushroom": dict(             # dash attacker
-        hp=50,  damage=20, dash_speed=10, display=95,
-        tint=(200, 130,  80, 255), label="Mushroom"),
-    # ── Legacy IDs (backward-compatible) ─────────────────────────────────────
-    "basic":   dict(hp=40,  damage=15, speed=2.0,  display=100, tint=None, label="Orc"),
-    "shooter": dict(hp=30,  damage=12,             display=100, tint=None, label="Shooter"),
-    "dash":    dict(hp=50,  damage=20, dash_speed=12, display=100, tint=None, label="Dasher"),
+    "slime": dict(
+        hp=25,  damage=10, speed=2.0, display=72,
+        tint=None, label="Slime"),
+    "worm": dict(
+        hp=20,  damage=8,  speed=1.5, display=48,
+        tint=None, label="Worm"),
+    # ── Ranged (ShooterEnemy) ─────────────────────────────────────────────────
+    "flying_eye": dict(
+        hp=30,  damage=12, display=72,
+        tint=None, label="Flying Eye"),
+    # ── Dash (DashEnemy) ─────────────────────────────────────────────────────
+    "mushroom": dict(
+        hp=50,  damage=20, dash_speed=10, display=80,
+        tint=None, label="Mushroom"),
 }
-# Frame-count overrides for new packs (add when a pack has different counts)
-# "subtype": dict(idle=N, walk=N, attack=N, hurt=N, die=N)
+
+# Exact frame counts per state (keyed by label-derived subtype)
 ENEMY_FRAME_COUNTS: dict = {
-    # Example (fill in when you add a new pack):
-    # "skeleton": dict(idle=4, walk=6, attack=5, hurt=3, die=4),
+    "goblin":        dict(idle=4, walk=6,  attack=4, hurt=3, die=6),
+    "bomber_goblin": dict(idle=4,          attack=6, hurt=3, die=6),
+    "flying_eye":    dict(idle=3, walk=3,  attack=3, hurt=3, die=5),
+    "mushroom":      dict(       walk=8,             hurt=3, die=6),
+    "slime":         dict(idle=5, walk=15,            hurt=3, die=6),
+    "worm":          dict(       walk=6,             hurt=3, die=6),
+}
+
+# Per-state explicit (frame_w, frame_h) for non-square sprite sheets
+# Only needed when frame_w != frame_h (load_strip_auto can't auto-detect these)
+_ENEMY_FRAME_DIM: dict = {
+    "goblin":  {"attack": (24, 16)},
+    "slime":   {"walk":   (16, 24)},
+    "worm":    {"walk": (16, 8), "hurt": (16, 8), "die": (16, 8)},
 }
 
 
@@ -110,18 +94,16 @@ def _load_enemy_anim(subtype: str, display_size: int, tint_rgba):
     """
     Load an Animator for `subtype`.
 
-    Priority:
-      1. assets/sprites/enemies/<subtype>/   — real sprites dropped by the user
-      2. Tinted Orc fallback
-
-    Frame counts come from ENEMY_FRAME_COUNTS[subtype] if present,
-    otherwise default Orc counts are used.
+    Priority per state (idle/walk/attack/hurt/die):
+      1. assets/sprites/enemies/<subtype>/<State>.png  — custom sprites
+      2. Tinted Orc fallback (if the Orc asset pack is present)
+      3. None → drawn colored-rectangle fallback
     """
     key = (subtype, display_size, tint_rgba)
     if key in _sprite_cache:
         return _fresh_copy(_sprite_cache[key])
 
-    from animator import Animator, load_strip_cropped, load_strip_auto
+    from animator import Animator, load_strip, load_strip_cropped, load_strip_auto
 
     counts = ENEMY_FRAME_COUNTS.get(subtype, {})
     n_idle = counts.get("idle",   6)
@@ -130,60 +112,88 @@ def _load_enemy_anim(subtype: str, display_size: int, tint_rgba):
     n_hurt = counts.get("hurt",   4)
     n_die  = counts.get("die",    4)
 
-    # ── 1. Try custom sprite directory ────────────────────────────────────────
-    # The pack only ships Attack3.png per enemy, so:
-    #   attack  → load Attack3.png (real sprite)
-    #   idle / walk / hurt / die → Orc fallback (see step 2)
+    # ── 1. Load all available state sprites from the custom directory ─────────
     custom_dir = os.path.join(_ENEMY_SPRITE_BASE, subtype)
-    custom_atk = None
+    _STATE_CANDIDATES = {
+        "idle":   ["Idle.png",   "idle.png"],
+        "walk":   ["Walk.png",   "Run.png",    "walk.png",  "run.png"],
+        "attack": ["Attack3.png","Attack.png", "Attack1.png","attack.png"],
+        "hurt":   ["Hurt.png",   "Hit.png",    "hurt.png",  "hit.png"],
+        "die":    ["Death.png",  "Dead.png",   "death.png", "dead.png"],
+    }
+    custom = {}
+    frame_dims = _ENEMY_FRAME_DIM.get(subtype, {})
     if os.path.isdir(custom_dir):
-        for fname in ("Attack.png", "Attack1.png", "Attack3.png"):
-            full = os.path.join(custom_dir, fname)
-            if os.path.exists(full):
-                frames = load_strip_auto(full, display_size)
-                if frames:
-                    custom_atk = _tint(frames, tint_rgba)
-                    break
+        for state, fnames in _STATE_CANDIDATES.items():
+            for fname in fnames:
+                full = os.path.join(custom_dir, fname)
+                if os.path.exists(full):
+                    dim = frame_dims.get(state)
+                    if dim:
+                        fw, fh = dim
+                        n = ENEMY_FRAME_COUNTS.get(subtype, {}).get(
+                            state if state != "die" else "die",
+                            pygame.image.load(full).get_width() // fw)
+                        scale = display_size / fh
+                        frames = load_strip(full, fw, fh, n, scale)
+                    else:
+                        frames = load_strip_auto(full, display_size)
+                    if frames:
+                        custom[state] = _tint(frames, tint_rgba)
+                        break
 
-    # ── 2. Tinted Orc fallback ────────────────────────────────────────────────
-    if not os.path.isdir(_ORC_DIR):
-        return None
-    try:
-        def s(fname, n):
-            return _tint(
-                load_strip_cropped(os.path.join(_ORC_DIR, fname),
-                                   100, 100, n, target_h=display_size),
-                tint_rgba)
+    # ── 2. Tinted Orc fallback for any states not covered by custom ───────────
+    orc_states = {}
+    if os.path.isdir(_ORC_DIR):
+        try:
+            def s(fname, n):
+                return _tint(
+                    load_strip_cropped(os.path.join(_ORC_DIR, fname),
+                                       100, 100, n, target_h=display_size),
+                    tint_rgba)
+            orc_states = {
+                "idle":    s("Orc-Idle.png",     n_idle),
+                "walk":    s("Orc-Walk.png",     n_walk),
+                "attack":  s("Orc-Attack01.png", n_atk),
+                "attack2": s("Orc-Attack02.png", n_atk),
+                "hurt":    s("Orc-Hurt.png",     n_hurt),
+                "die":     s("Orc-Death.png",    n_die),
+            }
+        except Exception as e:
+            print(f"[Enemy] Orc pack load failed: {e}")
 
-        idle = s("Orc-Idle.png",     n_idle)
-        walk = s("Orc-Walk.png",     n_walk)
-        atk1 = s("Orc-Attack01.png", n_atk)
-        atk2 = s("Orc-Attack02.png", n_atk)
-        hurt = s("Orc-Hurt.png",     n_hurt)
-        die  = s("Orc-Death.png",    n_die)
+    # ── 3. Merge: custom overrides Orc; need at least one state ──────────────
+    # Fill each state: custom → orc → best custom fallback → None
+    best_fallback = (custom.get("attack") or custom.get("idle") or
+                     next(iter(custom.values()), None))
 
-        if not idle:
-            return None
+    def _get(state):
+        return (custom.get(state) or orc_states.get(state) or best_fallback)
 
-        # Use real attack sprite if available, otherwise Orc attack
-        final_atk  = custom_atk or atk1
-        final_atk2 = custom_atk or atk2
+    idle   = _get("idle")
+    walk   = _get("walk")
+    attack = _get("attack")
+    atk2   = custom.get("attack") or orc_states.get("attack2") or best_fallback
+    hurt   = _get("hurt")
+    die    = _get("die")
 
-        a = Animator()
-        a.add_state("idle",    idle,       duration=8,  loop=True)
-        a.add_state("walk",    walk,       duration=5,  loop=True)
-        a.add_state("attack",  final_atk,  duration=4,  loop=False)
-        a.add_state("attack2", final_atk2, duration=4,  loop=False)
-        a.add_state("hurt",    hurt,       duration=6,  loop=False)
-        a.add_state("die",     die,        duration=8,  loop=False)
-        _sprite_cache[key] = a
-        src = "custom+Orc" if custom_atk else "Orc"
-        print(f"[Enemy] {subtype}: loaded ({src} sprites).")
-        return _fresh_copy(a)
+    if not idle:
+        return None   # no sprites at all → drawn rectangle fallback
 
-    except Exception as e:
-        print(f"[Enemy] {subtype} fallback failed: {e}")
-        return None
+    a = Animator()
+    a.add_state("idle",    idle,   duration=8, loop=True)
+    a.add_state("walk",    walk,   duration=5, loop=True)
+    a.add_state("attack",  attack, duration=4, loop=False)
+    a.add_state("attack2", atk2,   duration=4, loop=False)
+    a.add_state("hurt",    hurt,   duration=6, loop=False)
+    a.add_state("die",     die,    duration=8, loop=False)
+    _sprite_cache[key] = a
+
+    sources = []
+    if custom:   sources.append(f"custom({','.join(custom)})")
+    if orc_states: sources.append("Orc")
+    print(f"[Enemy] {subtype}: loaded ({' + '.join(sources) or 'fallback'}).")
+    return _fresh_copy(a)
 
 
 # ── Base class ────────────────────────────────────────────────────────────────
@@ -454,22 +464,24 @@ class DashEnemy(BaseEnemy):
 # ── Factory ───────────────────────────────────────────────────────────────────
 
 def make_enemy(etype, x, y, **kwargs):
-    cfg = ENEMY_CONFIG.get(etype)
-    if cfg is None:
-        cfg = ENEMY_CONFIG["basic"]   # unknown type → default orc
+    cfg = ENEMY_CONFIG.get(etype, ENEMY_CONFIG["goblin"])  # unknown → goblin
 
-    # Melee patrol types
-    if etype in ("orc","elite_orc","skeleton","werebear",
-                 "greatsword_skeleton","goblin","basic"):
+    if etype in ("goblin", "bomber_goblin", "skeleton", "slime", "worm"):
         return BasicEnemy(x, y, cfg, patrol_range=kwargs.get("patrol_range", 120))
 
-    # Ranged types
-    if etype in ("skeleton_archer","flying_eye","shooter"):
+    if etype == "flying_eye":
         return ShooterEnemy(x, y, cfg)
 
-    # Dash types
-    if etype in ("orc_rider","greatsword_skeleton_dash","mushroom","dash"):
+    if etype == "mushroom":
         return DashEnemy(x, y, cfg, detect_radius=kwargs.get("detect_radius", 200))
 
-    # Final fallback
-    return BasicEnemy(x, y, cfg, patrol_range=kwargs.get("patrol_range", 120))
+    # Legacy / unknown → remap to closest sprited equivalent
+    _remap = {
+        "orc": "goblin", "elite_orc": "bomber_goblin", "basic": "goblin",
+        "skeleton_archer": "flying_eye", "shooter": "flying_eye",
+        "orc_rider": "mushroom", "dash": "mushroom",
+        "werebear": "slime", "greatsword_skeleton": "worm",
+        "greatsword_skeleton_dash": "mushroom",
+    }
+    mapped = _remap.get(etype, "goblin")
+    return make_enemy(mapped, x, y, **kwargs)

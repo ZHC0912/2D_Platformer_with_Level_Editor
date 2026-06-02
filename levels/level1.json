@@ -1250,14 +1250,14 @@
   ],
   "enemies": [
     {
-      "type": "orc",
+      "type": "goblin",
       "x": 320,
       "y": 720,
       "patrol_range": 120,
       "detect_radius": 120
     },
     {
-      "type": "orc",
+      "type": "goblin",
       "x": 800,
       "y": 720,
       "patrol_range": 120,
@@ -1272,5 +1272,17 @@
     }
   ],
   "unlock_requirement": 0,
-  "triggers": []
+  "triggers": [],
+  "forced_character": null,
+  "checkpoints": [
+    {
+      "x": 900,
+      "y": 720
+    }
+  ],
+  "win_door": {
+    "x": 2260,
+    "y": 720
+  },
+  "bg_set": "forest"
 }

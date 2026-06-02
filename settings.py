@@ -63,10 +63,10 @@ TILE_COLORS = {
     T_TORCH:    ORANGE,
 }
 
-# Enemy type IDs
-E_BASIC    = "basic"
-E_SHOOTER  = "shooter"
-E_DASH     = "dash"
+# Enemy type IDs (mapped to types that have sprite assets)
+E_BASIC    = "goblin"
+E_SHOOTER  = "flying_eye"
+E_DASH     = "mushroom"
 
 # Weapon IDs
 W_SWORD = "sword"

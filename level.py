@@ -1,8 +1,136 @@
-import json, os, pygame
+import json, math, os, pygame
 from settings import *
 from tiles import TileMap
 from enemies import make_enemy
 from weapons import WeaponPickup, SwordSlash, MagicBolt
+from animator import load_strip
+
+_MISC = os.path.join("assets", "platformer_metroidvania asset pack v1.01",
+                     "miscellaneous sprites")
+
+
+# ── Checkpoint ────────────────────────────────────────────────────────────────
+
+def _load_strip_scaled(fname, fw, fh, count, target_h):
+    """Load a non-square strip and scale to target_h, preserving aspect."""
+    path = os.path.join(_MISC, fname)
+    scale = target_h / fh
+    return load_strip(path, fw, fh, count, scale)
+
+
+class Checkpoint:
+    """Animated save-point crystal; activates on player contact."""
+    W, H = 40, 48   # hitbox; sprite is ~29×48
+
+    # Shared frames — loaded once across all Checkpoint instances
+    _frames_idle:   list = []
+    _frames_active: list = []
+    _loaded:        bool = False
+
+    @classmethod
+    def _ensure_loaded(cls):
+        if cls._loaded:
+            return
+        cls._loaded = True
+        # save_point_anim_strip_9.png : 108×20, each frame 12×20
+        cls._frames_idle   = _load_strip_scaled("save_point_anim_strip_9.png",
+                                                 12, 20, 9, cls.H)
+        # save_point_saving_anim_strip_3.png : 36×20, each frame 12×20
+        cls._frames_active = _load_strip_scaled("save_point_saving_anim_strip_3.png",
+                                                 12, 20, 3, cls.H)
+
+    def __init__(self, x, y):
+        self._ensure_loaded()
+        self.x = x
+        self.y = y
+        self.rect = pygame.Rect(x - self.W // 2, y - self.H, self.W, self.H)
+        self.active = False
+        self._t = 0
+
+    def update(self):
+        self._t += 1
+
+    def draw(self, surface, cam_off):
+        ox, oy = cam_off
+        sx, sy = int(self.x - ox), int(self.y - oy)
+        frames = self._frames_active if self.active else self._frames_idle
+        if frames:
+            idx = (self._t // 7) % len(frames)
+            img = frames[idx]
+            surface.blit(img, (sx - img.get_width() // 2, sy - img.get_height()))
+            return
+        # Procedural fallback
+        pygame.draw.line(surface, (140, 120, 70), (sx, sy), (sx, sy - 48), 3)
+        col = (255, 200, 0) if self.active else (120, 120, 120)
+        wave = int(math.sin(self._t * 0.12) * 5) if self.active else 0
+        pts = [(sx+1, sy-48), (sx+22, sy-42+wave//2),
+               (sx+22, sy-32+wave), (sx+1, sy-32)]
+        pygame.draw.polygon(surface, col, pts)
+
+
+# ── Win Door ──────────────────────────────────────────────────────────────────
+
+class WinDoor:
+    """Animated exit door; touching it completes the level."""
+    W, H = 44, 80   # hitbox; door sprite is ~27×80
+
+    # Shared frames — loaded once
+    _frames_closed:  list = []
+    _frames_opening: list = []
+    _loaded:         bool = False
+
+    @classmethod
+    def _ensure_loaded(cls):
+        if cls._loaded:
+            return
+        cls._loaded = True
+        # strange_door_closed_anim_strip_10.png  : 160×48, each frame 16×48
+        cls._frames_closed  = _load_strip_scaled("strange_door_closed_anim_strip_10.png",
+                                                  16, 48, 10, cls.H)
+        # strange_door_opening_anim_strip_14.png : 224×48, each frame 16×48
+        cls._frames_opening = _load_strip_scaled("strange_door_opening_anim_strip_14.png",
+                                                  16, 48, 14, cls.H)
+
+    def __init__(self, x, y):
+        self._ensure_loaded()
+        self.x = x
+        self.y = y
+        self.rect = pygame.Rect(x - self.W // 2, y - self.H, self.W, self.H)
+        self._t = 0
+        self._opening = False   # True while playing opening animation
+
+    def update(self):
+        self._t += 1
+
+    def trigger_open(self):
+        """Call once when level complete to play the opening anim."""
+        self._opening = True
+        self._t = 0
+
+    def draw(self, surface, cam_off):
+        ox, oy = cam_off
+        sx, sy = int(self.x - ox), int(self.y - oy)
+        frames = self._frames_opening if self._opening else self._frames_closed
+        if frames:
+            total = len(frames)
+            if self._opening:
+                idx = min(self._t // 4, total - 1)   # play once, hold last frame
+            else:
+                idx = (self._t // 8) % total
+            img = frames[idx]
+            surface.blit(img, (sx - img.get_width() // 2, sy - img.get_height()))
+            return
+        # Procedural fallback
+        t = self._t
+        pygame.draw.rect(surface, (55, 35, 95), (sx-22, sy-60, 44, 60), border_radius=10)
+        pygame.draw.rect(surface, (140, 80, 220), (sx-22, sy-60, 44, 60), 3, border_radius=10)
+        cy = sy - 30
+        r = 14 + int(3 * math.sin(t * 0.06))
+        a = int(160 + 60 * math.sin(t * 0.04))
+        g = pygame.Surface((80, 80), pygame.SRCALPHA)
+        pygame.draw.circle(g, (180, 100, 255, min(255, a)), (40, 40), r + 10)
+        pygame.draw.circle(g, (220, 180, 255, 200), (40, 40), r)
+        surface.blit(g, (sx - 40, cy - 40))
 
 
 class Level:
@@ -21,6 +149,12 @@ class Level:
         self.pickup_data = []
         self.triggers = []            # [{"x": int, "message": str, "fired": bool}]
         self.forced_character = None  # None = any; "sword"/"bow"/"staff" = lock to one
+        self.checkpoint_data = []     # [{"x": int, "y": int}, ...]
+        self.checkpoints = []         # Checkpoint instances
+        self.win_door_data = None     # {"x": int, "y": int} or None
+        self.win_door = None          # WinDoor instance or None
+        self._checkpoint_event = None # set to (x,y) when a checkpoint is first activated
+        self.bg_set = "forest"        # "forest" or "dungeon"
 
     # ── Serialisation ────────────────────────────────────────────────────────
 
@@ -37,6 +171,9 @@ class Level:
             "triggers": [{"x": t["x"], "message": t["message"]}
                          for t in self.triggers],
             "forced_character": self.forced_character,
+            "checkpoints": self.checkpoint_data,
+            "win_door": self.win_door_data,
+            "bg_set": self.bg_set,
         }
 
     @classmethod
@@ -53,8 +190,13 @@ class Level:
         lv.triggers    = [{"x": t["x"], "message": t["message"], "fired": False}
                           for t in data.get("triggers", [])]
         lv.forced_character = data.get("forced_character", None)
+        lv.checkpoint_data = data.get("checkpoints", [])
+        lv.win_door_data   = data.get("win_door", None)
+        lv.bg_set          = data.get("bg_set", "forest")
         lv._spawn_enemies()
         lv._spawn_pickups()
+        lv._spawn_checkpoints()
+        lv._spawn_windoor()
         return lv
 
     def _spawn_enemies(self):
@@ -70,6 +212,13 @@ class Level:
         for pd in self.pickup_data:
             p = WeaponPickup(pd["weapon"], pd["x"], pd["y"])
             self.pickups.add(p)
+
+    def _spawn_checkpoints(self):
+        self.checkpoints = [Checkpoint(cd["x"], cd["y"]) for cd in self.checkpoint_data]
+
+    def _spawn_windoor(self):
+        wd = self.win_door_data
+        self.win_door = WinDoor(wd["x"], wd["y"]) if wd else None
 
     # ── File I/O ─────────────────────────────────────────────────────────────
 
@@ -87,6 +236,19 @@ class Level:
     # ── Update ───────────────────────────────────────────────────────────────
 
     def update(self, player):
+        self._checkpoint_event = None
+
+        # checkpoints
+        for cp in self.checkpoints:
+            cp.update()
+            if not cp.active and player.rect.colliderect(cp.rect):
+                cp.active = True
+                self._checkpoint_event = (cp.x, cp.y)
+
+        # win door
+        if self.win_door:
+            self.win_door.update()
+
         self.pickups.update()
         for enemy in list(self.enemies):
             enemy.update(self.tilemap, player, self.all_projectiles)
@@ -134,6 +296,10 @@ class Level:
     def draw(self, surface, cam_off):
         self.tilemap.draw(surface, cam_off)
         ox, oy = cam_off
+        for cp in self.checkpoints:
+            cp.draw(surface, cam_off)
+        if self.win_door:
+            self.win_door.draw(surface, cam_off)
         for pk in self.pickups:
             surface.blit(pk.image, (pk.rect.x - ox, pk.rect.y - oy))
         for enemy in self.enemies:
@@ -199,22 +365,22 @@ def _generate_default_level(num):
     lv.spawn_x = 1 * TILE_SIZE + 4
     lv.spawn_y = (rows-3) * TILE_SIZE - 44
 
-    # Enemy rosters per level
+    # Enemy rosters per level (only types with sprite assets)
     enemy_rosters = [
-        # Level 1: two basic orcs
-        [("orc", 8, 120), ("orc", 20, 120)],
-        # Level 2: orc + archer + orc
-        [("orc", 8, 120), ("skeleton_archer", 22, 0), ("orc", 38, 120)],
-        # Level 3: orc + archer + rider + skeleton
-        [("orc", 8, 120), ("skeleton_archer", 20, 0),
-         ("orc_rider", 32, 200), ("skeleton", 44, 100)],
-        # Level 4: elite + archer + rider + werebear + skeleton
-        [("elite_orc", 6, 100), ("skeleton_archer", 16, 0),
-         ("orc_rider", 26, 200), ("werebear", 36, 80), ("skeleton", 48, 120)],
-        # Level 5: full roster
-        [("elite_orc", 4, 100), ("skeleton_archer", 12, 0),
-         ("orc_rider", 22, 200), ("werebear", 32, 80),
-         ("greatsword_skeleton", 42, 120), ("greatsword_skeleton_dash", 52, 200)],
+        # Level 1: two goblins
+        [("goblin", 8, 120), ("goblin", 20, 120)],
+        # Level 2: goblin + flying_eye + goblin
+        [("goblin", 8, 120), ("flying_eye", 22, 0), ("goblin", 38, 120)],
+        # Level 3: goblin + flying_eye + mushroom + skeleton
+        [("goblin", 8, 120), ("flying_eye", 20, 0),
+         ("mushroom", 32, 200), ("skeleton", 44, 100)],
+        # Level 4: bomber_goblin + flying_eye + mushroom + slime + skeleton
+        [("bomber_goblin", 6, 100), ("flying_eye", 16, 0),
+         ("mushroom", 26, 200), ("slime", 36, 80), ("skeleton", 48, 120)],
+        # Level 5: full sprited roster
+        [("bomber_goblin", 4, 100), ("flying_eye", 12, 0),
+         ("mushroom", 22, 200), ("slime", 32, 80),
+         ("worm", 42, 120), ("mushroom", 52, 200)],
     ]
     roster = enemy_rosters[idx]
     lv.enemy_data = []
@@ -233,8 +399,20 @@ def _generate_default_level(num):
     elif num == 3:
         lv.pickup_data.append({"weapon": W_STAFF, "x": 15*TILE_SIZE, "y": (rows-3)*TILE_SIZE})
 
+    # Checkpoint at roughly 1/3 of the map (after first obstacle cluster)
+    cp_col = 22
+    lv.checkpoint_data = [{"x": cp_col * TILE_SIZE + TILE_SIZE // 2,
+                            "y": (rows - 2) * TILE_SIZE}]
+
+    # Win door near right end
+    wd_col = cols - 4
+    lv.win_door_data = {"x": wd_col * TILE_SIZE + TILE_SIZE // 2,
+                        "y": (rows - 2) * TILE_SIZE}
+
     lv._spawn_enemies()
     lv._spawn_pickups()
+    lv._spawn_checkpoints()
+    lv._spawn_windoor()
     return lv
 
 
@@ -308,6 +486,14 @@ def _generate_tutorial_level():
     lv.tilemap.set_tile(57, rows - 4, T_COIN)
     lv.tilemap.set_tile(58, rows - 5, T_COIN)   # coins angle upward → right
 
+    # ── Checkpoint (mid-tutorial) ─────────────────────────────────────────────
+    lv.checkpoint_data = [{"x": 37 * TILE_SIZE + TILE_SIZE // 2,
+                            "y": (rows - 2) * TILE_SIZE}]
+
+    # ── Win door at the end ───────────────────────────────────────────────────
+    lv.win_door_data = {"x": 57 * TILE_SIZE + TILE_SIZE // 2,
+                        "y": (rows - 2) * TILE_SIZE}
+
     # ── Tutorial tip triggers ─────────────────────────────────────────────────
     lv.triggers = [
         {"x":   80, "message": "Move with  WASD  or  Arrow Keys"},
@@ -321,4 +507,6 @@ def _generate_tutorial_level():
 
     lv._spawn_enemies()
     lv._spawn_pickups()
+    lv._spawn_checkpoints()
+    lv._spawn_windoor()
     return lv

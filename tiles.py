@@ -44,12 +44,38 @@ class TileTextureManager:
         self._dirt_fill = self._tile(_ROW_DIRT_FILL, _COL_DIRT_FILL)
         self._platform  = self._make_platform_tex()
 
-        # Animated tiles — individual PNG frame folders; prefix filters filenames
-        for key, folder, prefix in [
-            ("coin",  "coin",   None),
-            ("spike", "spikes", None),
-            ("torch", "torch",  "torch_"),  # only torch_*.png, not candlestick variants
-        ]:
+        # Animated tiles — try new pack strip files first, fall back to frame folders
+        _MISC = os.path.join("assets", "platformer_metroidvania asset pack v1.01",
+                             "miscellaneous sprites")
+
+        # coin: 48x8, 6 frames of 8x8 (square) — load_strip_auto works
+        # spike: 112x16, 7 frames of 16x16 (square) — load_strip_auto works
+        # torch: 96x24, 12 frames of 8x24 (non-square) — need explicit dims
+        _strip_cfg = {
+            "coin":  ("coin_anim_strip_6.png",       None,     None,  None),
+            "spike": ("trap_spikes_anim_strip_7.png", None,     None,  None),
+            "torch": ("tiki_torch_props_strip_12.png", 8,       24,    12),
+        }
+        for key, (fname, fw, fh, count) in _strip_cfg.items():
+            path = os.path.join(_MISC, fname)
+            if os.path.exists(path):
+                raw = pygame.image.load(path).convert_alpha()
+                h = raw.get_height()
+                if fh is None:   # square frames
+                    fh = h; fw = h; count = raw.get_width() // h
+                frames = []
+                for i in range(count):
+                    sf = pygame.Surface((fw, fh), pygame.SRCALPHA)
+                    sf.blit(raw, (0, 0), pygame.Rect(i * fw, 0, fw, fh))
+                    frames.append(pygame.transform.scale(sf, (TILE_SIZE, TILE_SIZE)))
+                if frames:
+                    self._anim[key] = frames
+                    continue   # skip folder fallback
+
+            # Folder fallback (original frame-by-frame PNG folders)
+            folder_map = {"coin": ("coin", None), "spike": ("spikes", None),
+                          "torch": ("torch", "torch_")}
+            folder, prefix = folder_map[key]
             d = os.path.join("assets", "tiles", folder)
             if os.path.isdir(d):
                 frames = []
