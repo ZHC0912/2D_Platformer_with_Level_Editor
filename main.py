@@ -1,4 +1,17 @@
 import sys, os, json, tempfile
+
+# ── Package path setup ────────────────────────────────────────────────────────
+# Add every sub-package directory to sys.path so all flat imports
+# (e.g. "from settings import *", "from player import Player") continue to
+# work unchanged across the whole codebase.
+_root = os.path.dirname(os.path.abspath(__file__))
+for _pkg in ("core", "entities", "world", "data", "ui", "systems", "admin"):
+    _p = os.path.join(_root, _pkg)
+    if os.path.isdir(_p) and _p not in sys.path:
+        sys.path.insert(0, _p)
+del _root, _pkg, _p
+# ─────────────────────────────────────────────────────────────────────────────
+
 os.environ.setdefault("SDL_VIDEODRIVER", "")
 
 import pygame
@@ -25,23 +38,56 @@ def main():
     os.makedirs("saves",    exist_ok=True)
 
     while True:
-        from login import LoginScreen
-        mode, username, save_data = LoginScreen(screen).run()
+        # ── Welcome screen ─────────────────────────────────────────────────────
+        from login import WelcomeScreen
+        welcome_result = WelcomeScreen(screen).run()
 
-        if mode == "quit":
+        if welcome_result == "quit":
             break
 
-        if mode == "admin":
-            from admin import AdminPanel
-            if AdminPanel(screen).run() == "quit":
+        if welcome_result == "guest":
+            result = _run_session(screen, None, None)
+            if result == "quit":
                 break
-            continue   # back to login
+            continue   # back to welcome
 
-        # mode == "play"  (logged-in user or guest)
-        result = _run_session(screen, username, save_data)
-        if result == "quit":
-            break
-        # result == "logout" → loop back to login screen
+        # welcome_result == "login"  →  enter the login/register sub-loop
+        while True:
+            from login import LoginScreen
+            login_result = LoginScreen(screen).run()
+
+            if login_result == "quit":
+                return  # bubble up to outer loop exit
+
+            if login_result == "back":
+                break   # back to welcome screen
+
+            if login_result == "register":
+                from login import RegisterScreen
+                reg_result = RegisterScreen(screen).run()
+                if reg_result == "quit":
+                    return
+                if reg_result == "back":
+                    continue   # back to login
+                # reg_result is ("play", username, save_data)
+                mode, username, save_data = reg_result
+                result = _run_session(screen, username, save_data)
+                if result == "quit":
+                    return
+                break   # back to welcome after session
+
+            # login_result is ("play"|"admin", username, save_data)
+            mode, username, save_data = login_result
+            if mode == "admin":
+                from admin import AdminPanel
+                if AdminPanel(screen).run() == "quit":
+                    return
+                break   # back to welcome after admin
+            else:
+                result = _run_session(screen, username, save_data)
+                if result == "quit":
+                    return
+                break   # back to welcome after session
 
 
 def _run_session(screen, username, save_data):

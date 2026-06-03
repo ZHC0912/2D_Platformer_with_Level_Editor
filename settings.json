@@ -1,0 +1,9 @@
+{
+  "GRAVITY": 0.6,
+  "PLAYER_SPEED": 5.0,
+  "JUMP_FORCE": -17.0,
+  "DJUMP_FORCE": -15.0,
+  "MAX_FALL": 18.0,
+  "GROUND_FRIC": 0.82,
+  "AIR_FRIC": 0.9
+}
